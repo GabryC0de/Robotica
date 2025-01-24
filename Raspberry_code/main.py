@@ -1,12 +1,12 @@
 import cv2
-import numpy as np
+# import numpy as np
 import serial
 import time
-import pid
+import json
 
 # Inizializza la telecamera
 camera = cv2.VideoCapture(0)# Configure the serial connection
-arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Adjust port if needed
+arduino = serial.Serial('COM7', 9600, timeout=1)  # Adjust port if needed
 time.sleep(2)  # Wait for the connection to initialize
 
 if not camera.isOpened():
@@ -21,7 +21,9 @@ height, width, _ = frameProva.shape
 square_height = height / cell_num
 square_width = width / cell_num
 
-print(int(square_height) * int(square_width))
+integral = 0
+derivative = 0
+previous_error = 0
 
 while True:
     # Leggi un frame dalla telecamera
@@ -29,13 +31,10 @@ while True:
     if not ret:
         print("Errore nella lettura del frame.")
         break
+    
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV)
-
     _, binary = cv2.threshold(gray, 50, 120, cv2.THRESH_BINARY_INV)
-    # _, binary = cv2.threshold(gray, lower, higher, cv2.THRESH_BINARY_INV)
     edges = cv2.Canny(binary, 50, 150)
-    # edges = cv2.Canny(binary, lower_canny, higher_canny)
 
     # Ottieni dimensioni del frame
     height, width = edges.shape
@@ -62,7 +61,7 @@ while True:
             # Disegna il rettangolo della cella
             #             frame, top-Left, bottom right, color, line thicknes
             cv2.rectangle(frame, (x_start, y_start), (x_end, y_end), (0, 255, 0), 1) # chatGPT
-            cv2.rectangle(edges, (x_start, y_start), (x_end, y_end), (255, 255, 255), 1)
+            cv2.rectangle(edges, (x_start, y_start), (x_end, y_end), (0, 255, 0), 1)
 
             # chat gpt
             cell = frame[y_start:y_end, x_start:x_end]
@@ -70,7 +69,7 @@ while True:
             # controllo la presenza di colori
             cell_hsv = cv2.cvtColor(cell, cv2.COLOR_BGR2HSV)
             green_mask = cv2.inRange(cell_hsv, (46, 201, 56), (89, 255, 121))
-            black_mask = cv2.inRange(cell_hsv, (75, 60, 10), (180, 110, 110))
+            black_mask = cv2.inRange(cell_hsv, (39, 0, 0), (136, 248, 62))
             red_mask = cv2.inRange(cell_hsv, (0, 0, 0), (0, 0, 0))
 
             if cv2.countNonZero(red_mask) > (768/4)*3:
@@ -79,7 +78,8 @@ while True:
             elif cv2.countNonZero(green_mask) > (768/4)*3:
                 color = 'green'
                 cv2.rectangle(edges, (x_start, y_start), (x_end, y_end), (0, 255, 0), -1)
-            elif cv2.countNonZero(black_mask) > (768/4)*3: # metà pixer di un riquadro
+            # elif cv2.countNonZero(black_mask) > (768/4)*3: # metà pixer di un riquadro
+            elif cv2.countNonZero(black_mask) > 0: # metà pixer di un riquadro
                 color = 'black'
                 cv2.rectangle(edges, (x_start, y_start), (x_end, y_end), (255, 255, 255), -1)
             else:
@@ -91,22 +91,39 @@ while True:
             else:
                 right_counts[color] += 1
                 
-    if left_counts['green'] > 2:
+    # green detected
+    if left_counts['green'] > 4:
         # direction, pwm left, pwm right
-        values = ["l", 255, 0]
+        values = {
+            "direction":"l",
+            "PWM_L":255,
+            "PWM_R":0
+            }
+        # Serialize the dictionary to a JSON string
+        json_data = json.dumps(values)
         
-        arduino.write(values.encode())  # Send the command to Arduino            
-#       # Wait for Arduino's response
-        response = arduino.readline().decode('utf-8').strip()
-        if response:
-            print(f"Received from Arduino: {response}")
-                
-    deviation = pid.pid(left_counts['black'], right_counts['black'])
-    arduino.write(deviation.encode())
-    # Display counters
-    print(f"Left counts: {left_counts}, Right counts: {right_counts}")
+        # Send the JSON string over serial
+        arduino.write(f"g{json_data.encode('utf-8')}\n")     # also send a newline character as a delimiter        
+        
+    kp = 1
+    ki = 0
+    kd = 0
+    
+    error = left_counts['black'] - right_counts['black']
+    integral += error
+    if error <= 10:
+        integral = 0
+    derivative = error - previous_error
+    previous_error = error
+    # calcolo deviazione del robot dal centro della linea
+    deviation = (error * kp) + (integral * ki) + (derivative * kd)
 
-    pid.pid()
+    arduino.write(f"p{deviation}\n".encode('utf-8'))
+
+    if arduino.in_waiting > 0:  # Check if there's a response
+        response = arduino.readline().decode('utf-8').strip()
+        print(f"Arduino responded: {response}")
+
     
     # Mostra il frame con la griglia
     cv2.imshow("Frame", frame)

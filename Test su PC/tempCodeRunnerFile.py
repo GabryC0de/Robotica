@@ -1,0 +1,1 @@
+black_mask = cv2.inRange(cell_hsv, (75, 60, 10), (180, 110, 110))

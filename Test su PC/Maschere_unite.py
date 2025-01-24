@@ -3,7 +3,7 @@ import numpy as np
 import trackBars
 
 # Inizializza la telecamera
-camera = cv2.VideoCapture(1)
+camera = cv2.VideoCapture(0)
 
 if not camera.isOpened():
     print("Errore nell'aprire la telecamera.")
