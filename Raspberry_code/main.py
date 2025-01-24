@@ -90,21 +90,61 @@ while True:
                 left_counts[color] += 1
             else:
                 right_counts[color] += 1
-                
-    # green detected
-    if left_counts['green'] > 4:
+    # double green
+    if ((left_counts['green'] - right_counts['green']) in range(0, 5)):
         # direction, pwm left, pwm right
         values = {
-            "direction":"l",
+            "direction":"back",
+            #forward
             "PWM_L":255,
-            "PWM_R":0
+            #backwards
+            "PWM_R":255,
+            "time": 5
+            }
+        # Serialize the dictionary to a JSON string
+        json_data = json.dumps(values)
+        
+        # Send the JSON string over serial
+        arduino.write(f"g{json_data.encode('utf-8')}\n")     # also send a newline character as a delimiter
+        
+        if arduino.in_waiting > 0:  # Check if there's a response
+            response = arduino.readline().decode('utf-8').strip()
+            print(f"Arduino responded: {response}")
+    # green detected on the left
+    elif ((left_counts['green'] > right_counts['green']) and left_counts['green']) > 5:
+        # direction, pwm left, pwm right
+        values = {
+            "direction":"left",
+            "PWM_L":0,
+            "PWM_R":255,
+            "time": 5
+            }
+        # Serialize the dictionary to a JSON string
+        json_data = json.dumps(values)
+        # Send the JSON string over serial
+        arduino.write(f"g{json_data.encode('utf-8')}\n")     # also send a newline character as a delimiter
+        
+        if arduino.in_waiting > 0:  # Check if there's a response
+            response = arduino.readline().decode('utf-8').strip()
+            print(f"Arduino responded: {response}")
+    
+    # green detected
+    elif ((right_counts['green'] > left_counts['green']) and right_counts['green']) > 5:
+        # direction, pwm left, pwm right
+        values = {
+            "direction":"right",
+            "PWM_L":255,
+            "PWM_R":0,
+            "time": 5
             }
         # Serialize the dictionary to a JSON string
         json_data = json.dumps(values)
         
         # Send the JSON string over serial
         arduino.write(f"g{json_data.encode('utf-8')}\n")     # also send a newline character as a delimiter        
-        
+
+
+    # starting the P section
     kp = 1
     ki = 0
     kd = 0
